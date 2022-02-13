@@ -1,5 +1,8 @@
-# Pycharm
-.idea/
+# MacOS Desktop Services Store
+.DS_Store
+
+# PyCharm IDE Files
+.idea
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
