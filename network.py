@@ -1,7 +1,9 @@
+from typing import Tuple
+
 import torch
 import torch.nn as nn
 
-from network.layer import T2V
+from time2vec import T2V
 
 """
 This file stores sequential one-step regression/forecast networks. 
@@ -21,7 +23,16 @@ class VanillaLSTM(nn.Module):
         return x.reshape(-1)
 
 
-class T2V_LSTM(nn.Module):
+class SeqT2v(nn.Module):
+    """
+    Network combining LSTM with T2V.
+    LSTM takes time-series value data; T2V takes time related data (stamp, datetime).
+
+    Input: (x1, x2)
+        x1 (sample_size, window_size, feature_number): time-series value data.
+        x2 (sample_size, time_feature_number): time related data.
+
+    """
     def __init__(self, linear_channel, period_channel, input_size, hidden_size,
                  time_input_channel=1, period_activation=torch.sin):
         super().__init__()
@@ -29,7 +40,7 @@ class T2V_LSTM(nn.Module):
         self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
         self.dense = nn.Linear(hidden_size + linear_channel + period_channel, 1)
 
-    def forward(self, x):
+    def forward(self, x: Tuple):
         x1, x2 = x
         _, (x1, _) = self.lstm(x1)
         x2 = self.t2v(x2)
@@ -37,10 +48,25 @@ class T2V_LSTM(nn.Module):
         return x.reshape(-1)
 
 
-class Boost_T2V_LSTM(nn.Module):
+class GreedySeqT2v(nn.Module):
+    """
+    Network combining LSTM with T2V using greedy(iterative) training strategy.
+
+    Given multiple time features, instead of directly feed all of them to network, we iterate through them and train the
+    network. After each training, we freeze and save the T2V layer of corresponding time feature, then start next loop.
+
+    References: [Boosted Embeddings for Time Series Forecasting](https://arxiv.org/abs/2104.04781).
+
+    Input: (x1, x2)
+        x1 (sample_size, window_size, feature_number): time-series value data.
+        x2 (sample_size, time_feature_number): time related data.
+
+    """
     def __init__(self, linear_channel, period_channel, input_size, hidden_size,
                  frozen_t2v=None, time_input_channel=1, period_activation=torch.sin):
         super().__init__()
+        # frozen_t2v is a list of frozen T2V layers.
+        # After the embedding training, len(frozen_t2v) = time_feature_number - 1.
         if frozen_t2v is None:
             frozen_t2v = []
         self.t2v = T2V(linear_channel, period_channel, time_input_channel, period_activation)
@@ -56,11 +82,14 @@ class Boost_T2V_LSTM(nn.Module):
         return self.frozen_t2v
 
     def frozen_forward(self, x):
+        """
+        Feed x[:, :-1] to frozen t2v layers, feed x[:, [-1]] to trainable t2v.
+        """
         frozen_output = [layer(x[:, [i]]) for i, layer in enumerate(self.frozen_t2v)]
         x = torch.cat(frozen_output + [self.t2v(x[:, [-1]])], dim=-1)
         return x
 
-    def forward(self, x):
+    def forward(self, x: Tuple):
         x1, x2 = x
         _, (x1, _) = self.lstm(x1)
         if self.frozen_t2v:

@@ -3,7 +3,13 @@ import torch.nn as nn
 
 
 """
+General Implementation of the paper <Time2Vec: Learning a Vector Representation of Time> by Pytorch.
 
+Modifications:
+    - `linear_channel` allows value larger than 1.
+    - `period_activation` allows dynamic or customized function instead of fixed sin().
+    - Input Data accepts traditional 2D (sample_size, feature_number), 
+        sequential 3D (sample_size, window_size, feature_number) or higher dimensional data.
 """
 
 
